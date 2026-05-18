@@ -1,0 +1,65 @@
+{
+  "name": "save-files-as-zip",
+  "displayName": "Save Files as Zip",
+  "description": "Right-click files or folders in VS Code or code-server and download them as a zip archive.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:saveFilesAsZip.saveAsZip"
+  ],
+  "main": "./extension.js",
+  "browser": "./web/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "saveFilesAsZip.saveAsZip",
+        "title": "Download as Zip",
+        "category": "Explorer"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "saveFilesAsZip.saveAsZip",
+          "group": "navigation@100"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Save Files as Zip",
+      "properties": {
+        "saveFilesAsZip.tempDirectory": {
+          "type": "string",
+          "default": ".save-files-as-zip",
+          "scope": "resource",
+          "markdownDescription": "Directory used for short-lived zip files before browser download. Relative paths resolve from the selected files' common parent. Absolute paths are allowed; in browser-only VS Code Web they must be writable through the active workspace file-system provider."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "node --check extension.js && node --check lib/zip.js && node --check web/extension.js && node --check web/test/suite/index.js && node --check test/zip.test.js && node --check test/extension.test.js && node --check scripts/smoke-web-download.js",
+    "test": "node test/zip.test.js && node test/extension.test.js",
+    "verify": "npm run lint && npm test",
+    "gen-vsix": "vsce package --out save-files-as-zip.vsix",
+    "web": "vscode-test-web --browser=chromium --host localhost --port 3010 --extensionDevelopmentPath=. test-fixtures/workspace",
+    "web:devtools": "vscode-test-web --browser=chromium --host localhost --port 3010 --open-devtools --extensionDevelopmentPath=. test-fixtures/workspace",
+    "test:web": "vscode-test-web --browser=chromium --headless --host localhost --port 3011 --extensionDevelopmentPath=. --extensionTestsPath=web/test/suite/index.js test-fixtures/workspace",
+    "test:web:download": "node scripts/smoke-web-download.js"
+  },
+  "devDependencies": {
+    "@vscode/test-web": "^0.0.80",
+    "@vscode/vsce": "^3.9.1"
+  }
+}

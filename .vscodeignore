@@ -1,0 +1,9 @@
+.git/**
+.vscode/**
+.vscode-test-web/**
+node_modules/**
+test/**
+test-fixtures/**
+scripts/**
+web/test/**
+*.vsix
