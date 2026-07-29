@@ -1,0 +1,15 @@
+{
+  "description": "Deterministic fixture tree for golden zip-byte tests. Times are UTC epoch ms; the golden bytes were generated (and must be verified) with TZ=UTC because zip DOS timestamps use local time. Modes exercise the unix external-attribute encoding; xorshift content exercises the store-when-not-smaller fallback.",
+  "root": "golden-fixture",
+  "entries": [
+    { "path": "golden-fixture", "type": "directory", "mode": 493, "mtimeMs": 1714786922000 },
+    { "path": "golden-fixture/alpha.txt", "type": "file", "mode": 420, "mtimeMs": 1714786922000, "content": { "kind": "text", "value": "alpha\n" } },
+    { "path": "golden-fixture/run.sh", "type": "file", "mode": 493, "mtimeMs": 1704164645000, "content": { "kind": "text", "value": "#!/bin/sh\necho hi\n" } },
+    { "path": "golden-fixture/big.txt", "type": "file", "mode": 420, "mtimeMs": 1714786922000, "content": { "kind": "repeat", "value": "The quick brown fox jumps over the lazy dog.\n", "count": 200 } },
+    { "path": "golden-fixture/blob.bin", "type": "file", "mode": 420, "mtimeMs": 1714786922000, "content": { "kind": "xorshift", "seed": 305419896, "length": 4096 } },
+    { "path": "golden-fixture/empty.txt", "type": "file", "mode": 420, "mtimeMs": 1714786922000, "content": { "kind": "text", "value": "" } },
+    { "path": "golden-fixture/empty-dir", "type": "directory", "mode": 493, "mtimeMs": 1714786922000 },
+    { "path": "golden-fixture/nested", "type": "directory", "mode": 493, "mtimeMs": 1714786922000 },
+    { "path": "golden-fixture/nested/beta.txt", "type": "file", "mode": 420, "mtimeMs": 1704164645000, "content": { "kind": "text", "value": "beta\n" } }
+  ]
+}

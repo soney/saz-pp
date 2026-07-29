@@ -1,8 +1,8 @@
-const vscode = require('vscode');
+import * as vscode from 'vscode';
 
 const COMMAND_ID = 'saveFilesAsZip.saveAsZip';
 
-async function run() {
+export async function run(): Promise<void> {
   const root = getWorkspaceRoot();
 
   const singleFile = vscode.Uri.joinPath(root, 'single-file.txt');
@@ -30,7 +30,7 @@ async function run() {
   }
 }
 
-function getWorkspaceRoot() {
+function getWorkspaceRoot(): vscode.Uri {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     throw new Error('Expected the vscode-test-web fixture workspace to be open.');
@@ -38,16 +38,16 @@ function getWorkspaceRoot() {
   return folders[0].uri;
 }
 
-async function assertFileMissing(uri) {
+async function assertFileMissing(uri: vscode.Uri): Promise<void> {
   const startedAt = Date.now();
-  let lastError;
+  let lastError: Error | undefined;
 
   while (Date.now() - startedAt < 5000) {
     try {
       await vscode.workspace.fs.stat(uri);
       await delay(100);
     } catch (error) {
-      lastError = error;
+      lastError = error instanceof Error ? error : new Error(String(error));
       return;
     }
   }
@@ -55,16 +55,12 @@ async function assertFileMissing(uri) {
   throw new Error(`Expected ${uri.toString()} to be absent: ${lastError && lastError.message}`);
 }
 
-async function updateTempDirectory(value) {
+async function updateTempDirectory(value: string | undefined): Promise<void> {
   await vscode.workspace
     .getConfiguration('saveFilesAsZip')
     .update('tempDirectory', value, vscode.ConfigurationTarget.Workspace);
 }
 
-function delay(ms) {
+function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-module.exports = {
-  run
-};

@@ -1,5 +1,7 @@
 node_modules/
 .vscode-test-web/
+dist/
+dist-test/
 *.tgz
 *.vsix
 test-fixtures/workspace/*.zip

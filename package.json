@@ -6,7 +6,8 @@
   "publisher": "local",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.125.0",
+    "node": ">=22"
   },
   "extensionKind": [
     "workspace",
@@ -15,11 +16,8 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:saveFilesAsZip.saveAsZip"
-  ],
-  "main": "./extension.js",
-  "browser": "./web/extension.js",
+  "main": "./dist/extension.js",
+  "browser": "./dist/web/extension.js",
   "contributes": {
     "commands": [
       {
@@ -49,17 +47,29 @@
     }
   },
   "scripts": {
-    "lint": "node --check extension.js && node --check lib/zip.js && node --check web/extension.js && node --check web/test/suite/index.js && node --check test/zip.test.js && node --check test/extension.test.js && node --check scripts/smoke-web-download.js",
-    "test": "node test/zip.test.js && node test/extension.test.js",
+    "build": "node scripts/build.js",
+    "lint": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.test.json --noEmit && node --check scripts/build.js && node --check scripts/smoke-web-download.js",
+    "pretest": "npm run build",
+    "test": "node --test dist-test/*.test.js",
     "verify": "npm run lint && npm test",
+    "vscode:prepublish": "npm run verify",
     "gen-vsix": "vsce package --out save-files-as-zip.vsix",
+    "preweb": "npm run build",
     "web": "vscode-test-web --browser=chromium --host localhost --port 3010 --extensionDevelopmentPath=. test-fixtures/workspace",
+    "preweb:devtools": "npm run build",
     "web:devtools": "vscode-test-web --browser=chromium --host localhost --port 3010 --open-devtools --extensionDevelopmentPath=. test-fixtures/workspace",
-    "test:web": "vscode-test-web --browser=chromium --headless --host localhost --port 3011 --extensionDevelopmentPath=. --extensionTestsPath=web/test/suite/index.js test-fixtures/workspace",
+    "pretest:web": "npm run build",
+    "test:web": "vscode-test-web --browser=chromium --headless --host localhost --port 3011 --extensionDevelopmentPath=. --extensionTestsPath=dist/web/test/suite/index.js test-fixtures/workspace",
+    "pretest:web:download": "npm run build",
     "test:web:download": "node scripts/smoke-web-download.js"
   },
   "devDependencies": {
-    "@vscode/test-web": "^0.0.80",
-    "@vscode/vsce": "^3.9.1"
+    "@types/node": "^22.20.1",
+    "@types/vscode": "^1.125.0",
+    "@vscode/test-web": "^0.0.81",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.27.7",
+    "playwright": "^1.62.0",
+    "typescript": "^5.9.3"
   }
 }

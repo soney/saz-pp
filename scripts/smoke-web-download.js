@@ -3,6 +3,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const { chromium } = require('playwright');
 const { runServer } = require('@vscode/test-web/out/server/main');
 const { downloadAndUnzipVSCode } = require('@vscode/test-web/out/server/download');
@@ -10,6 +11,24 @@ const { downloadAndUnzipVSCode } = require('@vscode/test-web/out/server/download
 const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const STORE = 0;
+const DEFLATE = 8;
+
+const CRC_TABLE = new Uint32Array(256);
+for (let index = 0; index < CRC_TABLE.length; index += 1) {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  }
+  CRC_TABLE[index] = value >>> 0;
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (let index = 0; index < bytes.length; index += 1) {
+    crc = CRC_TABLE[(crc ^ bytes[index]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
 
 async function main() {
   const rootDir = path.resolve(__dirname, '..');
@@ -20,7 +39,7 @@ async function main() {
   const build = await getBuild(testRunnerDataDir);
   const server = await runServer(host, port, {
     extensionDevelopmentPath: rootDir,
-    extensionTestsPath: path.join(rootDir, 'web/test/suite/index.js'),
+    extensionTestsPath: path.join(rootDir, 'dist/web/test/suite/index.js'),
     build,
     folderMountPath: path.join(rootDir, 'test-fixtures/workspace'),
     printServerLog: false
@@ -206,14 +225,31 @@ function readZipEntryNames(bytes) {
 
     assert.strictEqual(signature, LOCAL_FILE_HEADER_SIGNATURE);
     const method = view.getUint16(offset + 8, true);
-    assert.strictEqual(method, STORE);
-
+    const expectedCrc = view.getUint32(offset + 14, true);
     const compressedSize = view.getUint32(offset + 18, true);
+    const uncompressedSize = view.getUint32(offset + 22, true);
     const nameLength = view.getUint16(offset + 26, true);
     const extraLength = view.getUint16(offset + 28, true);
     const nameStart = offset + 30;
-    names.push(bytes.subarray(nameStart, nameStart + nameLength).toString('utf8'));
-    offset = nameStart + nameLength + extraLength + compressedSize;
+    const name = bytes.subarray(nameStart, nameStart + nameLength).toString('utf8');
+    const dataStart = nameStart + nameLength + extraLength;
+    const compressedData = bytes.subarray(dataStart, dataStart + compressedSize);
+
+    // Verify actual archive integrity, not just entry names: decompress and
+    // check the CRC so a broken writer cannot pass the smoke test.
+    let data;
+    if (method === STORE) {
+      data = compressedData;
+    } else if (method === DEFLATE) {
+      data = zlib.inflateRawSync(compressedData);
+    } else {
+      throw new Error(`Unexpected compression method ${method} for ${name}`);
+    }
+    assert.strictEqual(data.length, uncompressedSize, `uncompressed size mismatch for ${name}`);
+    assert.strictEqual(crc32(data), expectedCrc, `crc mismatch for ${name}`);
+
+    names.push(name);
+    offset = dataStart + compressedSize;
   }
 
   return names;
