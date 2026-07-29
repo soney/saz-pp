@@ -2,8 +2,12 @@
 .vscode/**
 .vscode-test-web/**
 node_modules/**
+src/**
 test/**
 test-fixtures/**
 scripts/**
-web/test/**
+dist-test/**
+dist/web/test/**
+dist/**/*.map
+tsconfig*.json
 *.vsix

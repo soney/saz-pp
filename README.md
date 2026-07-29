@@ -9,17 +9,29 @@ Right-click one or more files or folders in the VS Code Explorer and run **Downl
 - Multiple selections: downloads `selected-files.zip` and preserves the selected item names.
 - Workspace cleanup: no final `.zip` file is written next to the selected items.
 
-In VS Code Web/code-server, the extension writes a short-lived hidden file under `.save-files-as-zip/` only so VS Code's Explorer download flow can hand the bytes to the browser. That temporary file is removed after the download command completes. In a Node-backed extension host, it uses built-in Node.js APIs for archive creation.
+In VS Code Web/code-server, the extension writes a short-lived hidden file under `.save-files-as-zip/` only so VS Code's Explorer download flow can hand the bytes to the browser. That temporary file is removed after the download command completes. In a Node-backed extension host, it uses built-in Node.js APIs for archive creation. Archives are deflate-compressed on both desktop (zlib) and web (`CompressionStream`, with uncompressed fallback on older browsers).
 
 ## Settings
 
 - `saveFilesAsZip.tempDirectory`: directory for the short-lived zip file used to trigger the browser download. The default is `.save-files-as-zip`. Relative paths resolve from the selected files' common parent. Absolute paths are allowed; in browser-only VS Code Web they must be writable through the active workspace file-system provider.
+
+## Development
+
+The extension is TypeScript with a single shared core:
+
+- `src/shared/` — platform-neutral selection, traversal, zip writing, and download flows. No Node or vscode imports; platform capabilities arrive through a small adapter interface.
+- `src/desktop/` — desktop entry: direct `fs.lstat`/`zlib` adapter (preserves unix modes, symlink detection, and level-9 deflate).
+- `src/web/` — web entry: `vscode.workspace.fs` adapter with `CompressionStream('deflate-raw')` compression (feature-detected; stores uncompressed on older hosts).
+
+`npm run build` bundles both entries with esbuild into `dist/` (the web extension host loads a single file, which is why the web entry must be bundled). Tests compile to `dist-test/` and run with `node --test` against the **built** bundles, so `npm test` exercises exactly what ships — including a golden-fixture test that pins the desktop writer's exact bytes.
 
 ## Verify
 
 ```sh
 npm run verify
 ```
+
+This typechecks (`tsc --noEmit` for shared/web without Node globals — a stray `Buffer` in shared code is a compile error), builds, and runs the unit + bundle tests.
 
 ## Test in VS Code Web
 
