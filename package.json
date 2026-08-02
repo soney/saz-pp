@@ -5,6 +5,10 @@
   "version": "0.0.1",
   "publisher": "local",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/soney/saz-pp.git"
+  },
   "engines": {
     "vscode": "^1.125.0",
     "node": ">=22"

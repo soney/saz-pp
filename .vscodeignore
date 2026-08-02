@@ -11,3 +11,5 @@ dist/web/test/**
 dist/**/*.map
 tsconfig*.json
 *.vsix
+.gitignore
+.npmignore
