@@ -123,15 +123,19 @@ function createWebVscodeMock(memFs: MemFs) {
       }
     },
     workspace: {
-      configuration: { tempDirectory: undefined as string | undefined },
+      configuration: {
+        tempDirectory: undefined as string | undefined,
+        excludeNames: undefined as unknown
+      },
       fs: workspaceFs,
       getConfiguration(section: string) {
         assert.strictEqual(section, 'saveFilesAsZip');
         const configuration = this.configuration;
         return {
-          get: (key: string, defaultValue: string) => {
-            assert.strictEqual(key, 'tempDirectory');
-            return configuration.tempDirectory === undefined ? defaultValue : configuration.tempDirectory;
+          get: (key: string, defaultValue: unknown) => {
+            assert.ok(key === 'tempDirectory' || key === 'excludeNames', `unexpected setting ${key}`);
+            const value = key === 'tempDirectory' ? configuration.tempDirectory : configuration.excludeNames;
+            return value === undefined ? defaultValue : value;
           }
         };
       }
@@ -344,4 +348,105 @@ test('web bundle completes the download even when temp cleanup fails', async () 
   assert.strictEqual(vscode.commands.capturedDownloads.length, 1);
   assert.strictEqual(vscode.commands.capturedDownloads[0].filename, 'hello.zip');
   assert.match(vscode.window.informationMessages[0], /Downloaded hello\.zip/);
+});
+
+test('web bundle skips symbolic links inside a selected folder and says so', async () => {
+  const memFs = seedWorkspace();
+  memFs.addDir('/ws/dir/node_modules');
+  memFs.addDir('/ws/dir/node_modules/.bin');
+  // vscode.workspace.fs reports a link to a file as File | SymbolicLink.
+  memFs.nodes.set('/ws/dir/node_modules/.bin/tool', { type: FILE | SYMLINK, mtime: 1714786922000 });
+  const vscode = createWebVscodeMock(memFs);
+  const extension = loadWebBundle(vscode);
+  extension.activate({ subscriptions: [] });
+
+  await vscode.commands.registeredCallback!(wsUri('/ws/dir'), [wsUri('/ws/dir')]);
+
+  assert.strictEqual(vscode.window.errorMessages.length, 0, vscode.window.errorMessages[0]);
+  const zip = parseZip(vscode.commands.capturedDownloads[0].bytes);
+  assert.deepStrictEqual(entryNames(zip), [
+    'dir/',
+    'dir/empty-sub/',
+    'dir/nested.txt',
+    'dir/node_modules/',
+    'dir/node_modules/.bin/'
+  ]);
+  assert.match(vscode.window.informationMessages[0], /Downloaded dir\.zip .*Skipped 1 symbolic link\b/);
+});
+
+test('web bundle hands concurrent downloads to the explorer one at a time', async () => {
+  // explorer.download takes no argument: it downloads whatever the Explorer
+  // has selected, so a second download revealed inside the first one's wait
+  // would be downloaded twice and the first never.
+  const memFs = seedWorkspace();
+  const vscode = createWebVscodeMock(memFs);
+  const extension = loadWebBundle(vscode);
+  extension.activate({ subscriptions: [] });
+
+  await Promise.all([
+    vscode.commands.registeredCallback!(wsUri('/ws/hello.txt'), [wsUri('/ws/hello.txt')]),
+    vscode.commands.registeredCallback!(wsUri('/ws/blob.bin'), [wsUri('/ws/blob.bin')])
+  ]);
+
+  assert.strictEqual(vscode.window.errorMessages.length, 0, vscode.window.errorMessages[0]);
+  const byName = new Map(vscode.commands.capturedDownloads.map((download) => [download.filename, download.bytes]));
+  assert.deepStrictEqual([...byName.keys()].sort(), ['blob.zip', 'hello.zip']);
+  assert.deepStrictEqual(entryNames(parseZip(byName.get('hello.zip')!)), ['hello.txt']);
+  assert.deepStrictEqual(entryNames(parseZip(byName.get('blob.zip')!)), ['blob.bin']);
+  assert.deepStrictEqual(memFs.pathsUnder('/ws/.save-files-as-zip'), []);
+});
+
+test('web bundle still zips when tempDirectory resolves to the archive root', async () => {
+  for (const tempDirectory of ['.', '/ws']) {
+    const memFs = seedWorkspace();
+    const seeded = memFs.pathsUnder('/ws').sort();
+    const vscode = createWebVscodeMock(memFs);
+    vscode.workspace.configuration.tempDirectory = tempDirectory;
+    const extension = loadWebBundle(vscode);
+    extension.activate({ subscriptions: [] });
+
+    await vscode.commands.registeredCallback!(wsUri('/ws/hello.txt'), [wsUri('/ws/hello.txt')]);
+
+    assert.strictEqual(vscode.window.errorMessages.length, 0, `${tempDirectory}: ${vscode.window.errorMessages[0]}`);
+    assert.deepStrictEqual(entryNames(parseZip(vscode.commands.capturedDownloads[0].bytes)), ['hello.txt']);
+    assert.deepStrictEqual(memFs.pathsUnder('/ws').sort(), seeded, `${tempDirectory}: temp files left behind`);
+  }
+});
+
+test('web bundle leaves excludeNames out at any depth, .dotfiles-coursera by default', async () => {
+  // A stand-in for the Coursera lab's project folder, where start.sh keeps
+  // saved Git credentials and the persisted VS Code state.
+  const seedLabFolder = () => {
+    const memFs = seedWorkspace();
+    memFs.addDir('/ws/dir/.dotfiles-coursera');
+    memFs.addFile('/ws/dir/.dotfiles-coursera/.git-credentials', 'https://learner:token@github.com\n');
+    return memFs;
+  };
+  const zipDir = async (excludeNames: unknown) => {
+    const memFs = seedLabFolder();
+    const vscode = createWebVscodeMock(memFs);
+    vscode.workspace.configuration.excludeNames = excludeNames;
+    const extension = loadWebBundle(vscode);
+    extension.activate({ subscriptions: [] });
+    await vscode.commands.registeredCallback!(wsUri('/ws/dir'), [wsUri('/ws/dir')]);
+    assert.strictEqual(vscode.window.errorMessages.length, 0, vscode.window.errorMessages[0]);
+    return entryNames(parseZip(vscode.commands.capturedDownloads[0].bytes));
+  };
+
+  assert.deepStrictEqual(await zipDir(undefined), ['dir/', 'dir/empty-sub/', 'dir/nested.txt']);
+  assert.deepStrictEqual(await zipDir([]), [
+    'dir/',
+    'dir/.dotfiles-coursera/',
+    'dir/.dotfiles-coursera/.git-credentials',
+    'dir/empty-sub/',
+    'dir/nested.txt'
+  ]);
+  assert.deepStrictEqual(await zipDir([' nested.txt ', 42]), [
+    'dir/',
+    'dir/.dotfiles-coursera/',
+    'dir/.dotfiles-coursera/.git-credentials',
+    'dir/empty-sub/'
+  ]);
+  // A malformed setting falls back to the default rather than zipping everything.
+  assert.deepStrictEqual(await zipDir('.dotfiles-coursera'), ['dir/', 'dir/empty-sub/', 'dir/nested.txt']);
 });

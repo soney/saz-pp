@@ -2,6 +2,7 @@ import type { PlatformAdapter, UriLike } from './types';
 import { collectZipEntries } from './collect';
 import { createArchivePlan, getSelectedUris, removeNestedSelections } from './plan';
 import { buildZip } from './zip-core';
+import { relativeUriPath } from './uri-path';
 import { formatBytes, isUriString } from './util';
 
 type VscodeHost = typeof import('vscode');
@@ -10,7 +11,12 @@ type ExtensionContextLike = { subscriptions: Array<{ dispose(): unknown }> };
 export const COMMAND_ID = 'saveFilesAsZip.saveAsZip';
 const CONFIG_SECTION = 'saveFilesAsZip';
 const TEMP_DIRECTORY_SETTING = 'tempDirectory';
+const EXCLUDE_NAMES_SETTING = 'excludeNames';
 export const DEFAULT_TEMP_DOWNLOAD_DIR = '.save-files-as-zip';
+// The Coursera lab persists saved Git credentials, VS Code settings and every
+// installed extension in this folder inside the learner's workspace, so zipping
+// the workspace root would otherwise ship all of it.
+export const DEFAULT_EXCLUDE_NAMES = ['.dotfiles-coursera'];
 
 export interface Extension {
   activate(context: ExtensionContextLike): void;
@@ -30,6 +36,7 @@ export function createExtension(host: VscodeHost, adapter: PlatformAdapter): Ext
     const selectedItems = await removeNestedSelections(adapter.fs, uris);
     const plan = createArchivePlan(selectedItems);
     const tempRootUri = resolveTempRoot(plan.rootUri);
+    const skippedLinks: string[] = [];
 
     const zipBytes = await host.window.withProgress(
       {
@@ -41,9 +48,12 @@ export function createExtension(host: VscodeHost, adapter: PlatformAdapter): Ext
         progress.report({ message: 'Collecting files...' });
         const entries = await collectZipEntries(adapter.fs, selectedItems, {
           rootUri: plan.rootUri,
-          excludeBaseNames: [DEFAULT_TEMP_DOWNLOAD_DIR],
+          excludeBaseNames: [DEFAULT_TEMP_DOWNLOAD_DIR, ...getConfiguredExcludeNames()],
           excludeUris: [tempRootUri],
-          displayPath: adapter.displayPath
+          displayPath: adapter.displayPath,
+          onSkippedSymlink: (linkUri) => {
+            skippedLinks.push(relativeUriPath(plan.rootUri, linkUri) ?? adapter.displayPath(linkUri));
+          }
         });
         return buildZip(entries, {
           deflateRaw: adapter.deflateRaw,
@@ -59,7 +69,17 @@ export function createExtension(host: VscodeHost, adapter: PlatformAdapter): Ext
     );
 
     await adapter.download(plan.filename, zipBytes, tempRootUri);
-    host.window.showInformationMessage(`Downloaded ${plan.filename} (${formatBytes(zipBytes.byteLength)}).`);
+    host.window.showInformationMessage(
+      `Downloaded ${plan.filename} (${formatBytes(zipBytes.byteLength)}).${describeSkippedLinks(skippedLinks)}`
+    );
+  }
+
+  function describeSkippedLinks(links: string[]): string {
+    if (links.length === 0) {
+      return '';
+    }
+    const noun = links.length === 1 ? 'symbolic link' : 'symbolic links';
+    return ` Skipped ${links.length} ${noun} (${links[0]}${links.length > 1 ? ', ...' : ''}).`;
   }
 
   function resolveTempRoot(baseUri: UriLike): UriLike {
@@ -71,15 +91,29 @@ export function createExtension(host: VscodeHost, adapter: PlatformAdapter): Ext
     return adapter.resolveTempRoot(tempDirectory, baseUri);
   }
 
-  function getConfiguredTempDirectory(): string {
+  function getSetting<T>(key: string, defaultValue: T): unknown {
     const configuration =
       host.workspace && typeof host.workspace.getConfiguration === 'function'
         ? host.workspace.getConfiguration(CONFIG_SECTION)
         : undefined;
-    const configured =
-      configuration && typeof configuration.get === 'function'
-        ? configuration.get(TEMP_DIRECTORY_SETTING, DEFAULT_TEMP_DOWNLOAD_DIR)
-        : DEFAULT_TEMP_DOWNLOAD_DIR;
+    return configuration && typeof configuration.get === 'function'
+      ? configuration.get(key, defaultValue)
+      : defaultValue;
+  }
+
+  function getConfiguredExcludeNames(): string[] {
+    const configured = getSetting(EXCLUDE_NAMES_SETTING, DEFAULT_EXCLUDE_NAMES);
+    if (!Array.isArray(configured)) {
+      return DEFAULT_EXCLUDE_NAMES;
+    }
+    return configured
+      .filter((name): name is string => typeof name === 'string')
+      .map((name) => name.trim())
+      .filter(Boolean);
+  }
+
+  function getConfiguredTempDirectory(): string {
+    const configured = getSetting(TEMP_DIRECTORY_SETTING, DEFAULT_TEMP_DOWNLOAD_DIR);
 
     if (typeof configured !== 'string') {
       return DEFAULT_TEMP_DOWNLOAD_DIR;

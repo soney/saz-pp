@@ -121,3 +121,25 @@ test('rejects empty entry lists, oversized archives, and overlong paths', async 
     /Zip path is too long/
   );
 });
+
+test('marks non-ASCII entry names as UTF-8 so unzip tools do not read them as CP437', async () => {
+  // Without general purpose bit 11 the zip spec says names are CP437, so
+  // Python's zipfile, Windows Explorer and Info-ZIP turn an accented name into
+  // box-drawing characters. ASCII names keep flags 0, so the golden fixture
+  // bytes are unchanged.
+  const dirName = 'r\u00e9sum\u00e9/';
+  const fileName = `${dirName}caf\u00e9 \u2615.txt`;
+  const bytes = await buildZip([
+    { kind: 'directory', zipPath: dirName, displayPath: dirName, mtimeMs: 1714786922000 },
+    { kind: 'file', zipPath: fileName, displayPath: fileName, mtimeMs: 1714786922000, getData: async () => Buffer.from('x') },
+    { kind: 'file', zipPath: 'plain.txt', displayPath: 'plain.txt', mtimeMs: 1714786922000, getData: async () => Buffer.from('y') }
+  ]);
+  const zip = parseZip(bytes);
+  const UTF8 = 0x0800;
+  for (const name of [dirName, fileName]) {
+    assert.strictEqual(entryByName(zip, name).flags & UTF8, UTF8, `local header of ${name} lacks the UTF-8 flag`);
+    assert.strictEqual(zip.central.find((entry) => entry.name === name)!.flags & UTF8, UTF8, `central header of ${name} lacks the UTF-8 flag`);
+  }
+  assert.strictEqual(entryByName(zip, 'plain.txt').flags, 0);
+  assert.strictEqual(zip.central.find((entry) => entry.name === 'plain.txt')!.flags, 0);
+});

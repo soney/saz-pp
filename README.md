@@ -8,12 +8,19 @@ Right-click one or more files or folders in the VS Code Explorer and run **Downl
 - Single folder: downloads `foldername.zip` and preserves the folder name in the archive.
 - Multiple selections: downloads `selected-files.zip` and preserves the selected item names.
 - Workspace cleanup: no final `.zip` file is written next to the selected items.
+- Contents: everything under a selected folder, including dot folders and `node_modules`, except the temp directory below. Names that are not plain ASCII are stored as flagged UTF-8, so Windows, 7-Zip and Python read them correctly.
+- Symbolic links are never followed. Selecting a link is an error; links found inside a selected folder (such as `node_modules/.bin` after `npm install`, loops, or dangling links) are left out, and the completion message says how many were skipped.
+- Two downloads started together are handed to the browser one at a time, so each gets its own zip.
 
 In VS Code Web/code-server, the extension writes a short-lived hidden file under `.save-files-as-zip/` only so VS Code's Explorer download flow can hand the bytes to the browser. That temporary file is removed after the download command completes. In a Node-backed extension host, it uses built-in Node.js APIs for archive creation. Archives are deflate-compressed on both desktop (zlib) and web (`CompressionStream`, with uncompressed fallback on older browsers).
 
 ## Settings
 
 - `saveFilesAsZip.tempDirectory`: directory for the short-lived zip file used to trigger the browser download. The default is `.save-files-as-zip`. Relative paths resolve from the selected files' common parent. Absolute paths are allowed; in browser-only VS Code Web they must be writable through the active workspace file-system provider.
+
+  In VS Code Web and code-server the zip reaches the browser through the Explorer (`revealInExplorer`, then `explorer.download`, which takes no argument and downloads the Explorer's selection). So the directory must be inside the workspace and must not be hidden by `files.exclude`: with a directory outside the workspace, or a pattern such as `**/.*` that hides the default folder, VS Code downloads the right-clicked item itself, or nothing, instead of the zip.
+
+- `saveFilesAsZip.excludeNames`: file and folder names left out of every zip, at any depth (exact base-name matches). The default is `[".dotfiles-coursera"]`: the Coursera lab image keeps saved Git credentials (`.git-credentials`), VS Code settings, the code-server key half, and every installed extension in that folder inside the learner's project, so zipping the project root would otherwise ship all of it. Setting the list replaces the default rather than adding to it.
 
 ## Development
 

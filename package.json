@@ -2,7 +2,7 @@
   "name": "save-files-as-zip",
   "displayName": "Save Files as Zip",
   "description": "Right-click files or folders in VS Code or code-server and download them as a zip archive.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "local",
   "license": "MIT",
   "repository": {
@@ -45,7 +45,18 @@
           "type": "string",
           "default": ".save-files-as-zip",
           "scope": "resource",
-          "markdownDescription": "Directory used for short-lived zip files before browser download. Relative paths resolve from the selected files' common parent. Absolute paths are allowed; in browser-only VS Code Web they must be writable through the active workspace file-system provider."
+          "markdownDescription": "Directory used for short-lived zip files before browser download. Relative paths resolve from the selected files' common parent. Absolute paths are allowed; in browser-only VS Code Web they must be writable through the active workspace file-system provider. In VS Code Web and code-server the download goes through the Explorer, so the directory must be inside the workspace and not hidden by `files.exclude`."
+        },
+        "saveFilesAsZip.excludeNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".dotfiles-coursera"
+          ],
+          "scope": "resource",
+          "markdownDescription": "File and folder names left out of every zip, at any depth. The default keeps out the Coursera lab's `.dotfiles-coursera` folder, which holds saved Git credentials, VS Code settings, and every installed extension."
         }
       }
     }
@@ -57,7 +68,7 @@
     "test": "node --test dist-test/*.test.js",
     "verify": "npm run lint && npm test",
     "vscode:prepublish": "npm run verify",
-    "gen-vsix": "vsce package --out save-files-as-zip.vsix",
+    "gen-vsix": "vsce package --no-dependencies --out save-files-as-zip.vsix",
     "preweb": "npm run build",
     "web": "vscode-test-web --browser=chromium --host localhost --port 3010 --extensionDevelopmentPath=. test-fixtures/workspace",
     "preweb:devtools": "npm run build",

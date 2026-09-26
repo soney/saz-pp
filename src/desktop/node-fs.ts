@@ -1,6 +1,7 @@
 // Node-backed adapter pieces. Deliberately vscode-free so plain-node unit
 // tests can exercise the shared core through the exact production file access.
 import * as fs from 'fs';
+import { promisify } from 'util';
 import * as zlib from 'zlib';
 import type { FsAdapter, UriLike } from '../shared/types';
 
@@ -40,6 +41,11 @@ export const nodeFs: FsAdapter = {
   }
 };
 
+const deflateRawAsync = promisify(zlib.deflateRaw);
+
+// The async form runs on libuv's thread pool and yields the same bytes. The
+// sync form held the extension host, which code-server shares between every
+// extension, for seconds on a folder with node_modules in it.
 export async function nodeDeflateRaw(data: Uint8Array): Promise<Uint8Array> {
-  return zlib.deflateRawSync(data, { level: 9 });
+  return deflateRawAsync(data, { level: 9 });
 }

@@ -9,6 +9,8 @@ const DEFLATE = 8;
 
 export interface ZipLocalEntry {
   name: string;
+  /** General purpose bit flag (bit 11 = name is UTF-8). */
+  flags: number;
   method: number;
   crc32: number;
   compressedSize: number;
@@ -19,6 +21,7 @@ export interface ZipLocalEntry {
 
 export interface ZipCentralEntry {
   name: string;
+  flags: number;
   method: number;
   crc32: number;
   externalAttributes: number;
@@ -43,6 +46,7 @@ export function parseZip(input: Uint8Array): ParsedZip {
       break;
     }
 
+    const flags = buffer.readUInt16LE(offset + 6);
     const method = buffer.readUInt16LE(offset + 8);
     const crc = buffer.readUInt32LE(offset + 14);
     const compressedSize = buffer.readUInt32LE(offset + 18);
@@ -64,11 +68,12 @@ export function parseZip(input: Uint8Array): ParsedZip {
     }
 
     assert.strictEqual(data.length, uncompressedSize, `uncompressed size mismatch for ${name}`);
-    entries.push({ name, method, crc32: crc, compressedSize, uncompressedSize, data });
+    entries.push({ name, flags, method, crc32: crc, compressedSize, uncompressedSize, data });
     offset = dataStart + compressedSize;
   }
 
   while (offset < buffer.length && buffer.readUInt32LE(offset) === CENTRAL_DIRECTORY_SIGNATURE) {
+    const flags = buffer.readUInt16LE(offset + 8);
     const method = buffer.readUInt16LE(offset + 10);
     const crc = buffer.readUInt32LE(offset + 16);
     const nameLength = buffer.readUInt16LE(offset + 28);
@@ -77,7 +82,7 @@ export function parseZip(input: Uint8Array): ParsedZip {
     const externalAttributes = buffer.readUInt32LE(offset + 38);
     const localHeaderOffset = buffer.readUInt32LE(offset + 42);
     const name = buffer.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
-    central.push({ name, method, crc32: crc, externalAttributes, localHeaderOffset });
+    central.push({ name, flags, method, crc32: crc, externalAttributes, localHeaderOffset });
     offset += 46 + nameLength + extraLength + commentLength;
   }
 

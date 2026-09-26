@@ -143,15 +143,17 @@ function createVscodeMock() {
     },
     workspace: {
       configuration: {
-        tempDirectory: undefined as string | undefined
+        tempDirectory: undefined as string | undefined,
+        excludeNames: undefined as unknown
       },
       getConfiguration(section: string) {
         assert.strictEqual(section, 'saveFilesAsZip');
         const configuration = this.configuration;
         return {
-          get: (key: string, defaultValue: string) => {
-            assert.strictEqual(key, 'tempDirectory');
-            return configuration.tempDirectory === undefined ? defaultValue : configuration.tempDirectory;
+          get: (key: string, defaultValue: unknown) => {
+            assert.ok(key === 'tempDirectory' || key === 'excludeNames', `unexpected setting ${key}`);
+            const value = key === 'tempDirectory' ? configuration.tempDirectory : configuration.excludeNames;
+            return value === undefined ? defaultValue : value;
           }
         };
       }
