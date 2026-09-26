@@ -6,11 +6,15 @@ export interface CollectOptions {
   excludeBaseNames?: string[];
   excludeUris?: UriLike[];
   displayPath(uri: UriLike): string;
+  /** Called for each symbolic link found (and skipped) below a selected folder. */
+  onSkippedSymlink?(uri: UriLike): void;
 }
 
 /**
  * Walk the selection into zip entry inputs. Directories recurse with children
- * sorted by name; symbolic links are rejected; duplicate zip paths collapse.
+ * sorted by name; duplicate zip paths collapse. Symbolic links are never
+ * followed: a selected link is an error, and a link found inside a selected
+ * folder (node_modules/.bin, a loop, a dangling link) is skipped and reported.
  */
 export async function collectZipEntries(
   fs: FsAdapter,
@@ -19,6 +23,15 @@ export async function collectZipEntries(
 ): Promise<ZipEntryInput[]> {
   const entries: ZipEntryInput[] = [];
   const seenZipPaths = new Set<string>();
+  // An exclusion that contains a selected item (a tempDirectory of '.', '..'
+  // or the workspace root) would exclude everything, so it only applies when
+  // it sits below the selection.
+  const excludeUris = (options.excludeUris ?? []).filter(
+    (excludeUri) =>
+      excludeUri &&
+      !selectedItems.some((item) => isSameUri(excludeUri, item.uri) || isUriInside(excludeUri, item.uri))
+  );
+  const walkOptions: CollectOptions = { ...options, excludeUris };
 
   for (const item of selectedItems) {
     const relativePath = relativeUriPath(options.rootUri, item.uri);
@@ -30,7 +43,7 @@ export async function collectZipEntries(
       throw new Error(`Selected item is outside the archive root: ${options.displayPath(item.uri)}`);
     }
 
-    await collectUri(fs, item.uri, relativePath, entries, seenZipPaths, options);
+    await collectUri(fs, item.uri, relativePath, entries, seenZipPaths, walkOptions, true);
   }
 
   return entries;
@@ -42,7 +55,8 @@ async function collectUri(
   zipPath: string,
   entries: ZipEntryInput[],
   seenZipPaths: Set<string>,
-  options: CollectOptions
+  options: CollectOptions,
+  selected = false
 ): Promise<void> {
   const stat = await fs.stat(uri);
   if (shouldExclude(uri, options)) {
@@ -50,7 +64,11 @@ async function collectUri(
   }
 
   if (stat.isSymbolicLink) {
-    throw new Error(`Symbolic links are not supported: ${options.displayPath(uri)}`);
+    if (selected) {
+      throw new Error(`Symbolic links are not supported: ${options.displayPath(uri)}`);
+    }
+    options.onSkippedSymlink?.(uri);
+    return;
   }
 
   if (stat.isDirectory) {

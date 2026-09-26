@@ -8,6 +8,9 @@ const VERSION_MADE_BY = 0x031e;
 const VERSION_NEEDED = 20;
 const STORE = 0;
 const DEFLATE = 8;
+// General purpose bit 11: the name is UTF-8. Without it the spec says CP437,
+// and Python's zipfile, Windows Explorer and 7-Zip garble non-ASCII names.
+const UTF8_NAME_FLAG = 0x0800;
 const MAX_UINT16 = 0xffff;
 const MAX_UINT32 = 0xffffffff;
 const DEFAULT_FILE_MODE = 0o100644;
@@ -37,6 +40,7 @@ export interface BuildZipOptions {
 
 interface EntryRecord {
   nameBytes: Uint8Array;
+  flags: number;
   method: number;
   crc32: number;
   compressedSize: number;
@@ -73,6 +77,8 @@ export async function buildZip(entries: ZipEntryInput[], options: BuildZipOption
     const { dosTime, dosDate } = toDosDateTime(new Date(entry.mtimeMs));
     const record: EntryRecord = {
       nameBytes,
+      // Only non-ASCII names carry the flag, so ASCII archives are unchanged.
+      flags: nameBytes.some((byte) => byte >= 0x80) ? UTF8_NAME_FLAG : 0,
       method: payload.method,
       crc32: payload.crc32,
       compressedSize: payload.compressedSize,
@@ -143,7 +149,7 @@ function createLocalFileHeader(record: EntryRecord): Uint8Array {
   const view = new DataView(header.buffer);
   view.setUint32(0, LOCAL_FILE_HEADER_SIGNATURE, true);
   view.setUint16(4, VERSION_NEEDED, true);
-  view.setUint16(6, 0, true);
+  view.setUint16(6, record.flags, true);
   view.setUint16(8, record.method, true);
   view.setUint16(10, record.dosTime, true);
   view.setUint16(12, record.dosDate, true);
@@ -163,7 +169,7 @@ function createCentralDirectoryHeader(record: EntryRecord): Uint8Array {
   view.setUint32(0, CENTRAL_DIRECTORY_SIGNATURE, true);
   view.setUint16(4, VERSION_MADE_BY, true);
   view.setUint16(6, VERSION_NEEDED, true);
-  view.setUint16(8, 0, true);
+  view.setUint16(8, record.flags, true);
   view.setUint16(10, record.method, true);
   view.setUint16(12, record.dosTime, true);
   view.setUint16(14, record.dosDate, true);

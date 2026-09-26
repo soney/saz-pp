@@ -183,3 +183,47 @@ test('collect rejects symbolic links and out-of-root selections', async () => {
     await fs.promises.rm(baseDir, { recursive: true, force: true });
   }
 });
+
+test('collect skips symbolic links found inside a selected folder, including loops and dangling links', async () => {
+  // `npm install` leaves node_modules/.bin symlinks behind (C3 M1 Assessment
+  // Problem 3 tells learners to run it), so rejecting every nested link made
+  // any folder above such a project impossible to download.
+  const baseDir = await makeTempDir();
+  try {
+    const project = path.join(baseDir, 'Problem 3');
+    await fs.promises.mkdir(path.join(project, 'node_modules', 'pkg'), { recursive: true });
+    await fs.promises.mkdir(path.join(project, 'node_modules', '.bin'), { recursive: true });
+    await fs.promises.writeFile(path.join(project, 'index.js'), 'x');
+    await fs.promises.writeFile(path.join(project, 'node_modules', 'pkg', 'cli.js'), 'y');
+    await fs.promises.symlink('../pkg/cli.js', path.join(project, 'node_modules', '.bin', 'tool'));
+    await fs.promises.symlink('.', path.join(project, 'loop'));
+    await fs.promises.symlink('missing-target', path.join(project, 'dangling'));
+
+    const skipped: string[] = [];
+    const items = await removeNestedSelections(nodeFs, [FakeUri.file(project)]);
+    const entries = await collectZipEntries(nodeFs, items, {
+      rootUri: FakeUri.file(baseDir),
+      displayPath,
+      onSkippedSymlink: (uri) => skipped.push(path.relative(baseDir, uri.path))
+    });
+
+    assert.deepStrictEqual(
+      entries.map((entry) => entry.zipPath),
+      [
+        'Problem 3/',
+        'Problem 3/index.js',
+        'Problem 3/node_modules/',
+        'Problem 3/node_modules/.bin/',
+        'Problem 3/node_modules/pkg/',
+        'Problem 3/node_modules/pkg/cli.js'
+      ]
+    );
+    assert.deepStrictEqual(skipped.sort(), [
+      path.join('Problem 3', 'dangling'),
+      path.join('Problem 3', 'loop'),
+      path.join('Problem 3', 'node_modules', '.bin', 'tool')
+    ]);
+  } finally {
+    await fs.promises.rm(baseDir, { recursive: true, force: true });
+  }
+});
